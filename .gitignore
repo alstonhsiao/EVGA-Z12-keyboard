@@ -1,0 +1,11 @@
+# macOS
+.DS_Store
+
+# 編輯器
+.vscode/
+.idea/
+*.swp
+
+# HID 擷取原始檔（可能很大，另外保存）
+captures/
+*.pcapng
