@@ -66,6 +66,7 @@ USB         2.0 Full Speed (12 Mb/s), 500 mA
 .venv/bin/python src/z12ctl.py profile save               # persist current RAM
 .venv/bin/python src/z12ctl.py macro list
 .venv/bin/python src/z12ctl.py macro get 6
+.venv/bin/python src/z12ctl.py macro set 3 --name z12test F13
 .venv/bin/python src/z12ctl.py profile get
 .venv/bin/python src/z12ctl.py led get
 .venv/bin/python src/z12ctl.py led set StaticOn --sub 2
@@ -76,8 +77,9 @@ USB         2.0 Full Speed (12 Mb/s), 500 mA
 
 | 已完成 | 尚未做成 CLI |
 |--------|----------------|
-| keymap 讀取（121 鍵，含 Shift 層參數） | 巨集寫入 |
-| keymap 寫入（`keymap set`，已實機驗證） | 切換 / 重置 profile |
+| keymap 讀取（121 鍵，含 Shift 層參數） | 重置 profile |
+| keymap 寫入（`keymap set`，已實機驗證） | 巨集刪除 |
+| 巨集寫入（`macro set`，plain key taps） | |
 | 存檔（`profile save`，profile=0，拔插後仍在） | LED 各模式參數（顏色/速度） |
 | LED 模式切換（`led set StaticOn` 等） | |
 | 巨集讀取（report 9/10，HID usage 編碼） | report 6/8（macOS hidapi 讀不到） |

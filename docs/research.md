@@ -547,7 +547,10 @@ offset 8 起 1024B。模板欄位佈局（從拼回的 payload 解析）：
 - ~~**待確認**：存檔命令 `04 EA 02 12 00 00 00 01` 回 0xC1，需測 profile=0。~~
   → **2026-08-16 已確認**：`04 EA 02 12 00 00 00 00` 回 0xC0；帶編號 1 回 0xC1。
   拔插後讀回一致，flash 持久化成立。
-- **待驗證**：巨集寫入流程（report 9 Write 分封包）。
+- ~~**待驗證**：巨集寫入流程（report 9 Write 分封包）。~~
+  → **2026-08-16**：空槽 #3 寫入成功。先寫 F13 tap（讀回一致，但 F13 無可見字元）；
+  再覆寫為 `z` tap。使用者按 E5 **畫面出現 Z**。onboard 播放成立。
+  GET 回音常是 stale `FF`，以 status 0xC0 + 再讀 4 包為準。
 - **待製作**：CLI 工具（整合所有已驗證協定）。
 
 ## keymap 全掃描實機驗證（2026-08-16）
@@ -732,7 +735,7 @@ LED 模式命令（0x0C–0x12），不用 report 6。
 5. ~~按鍵重新映射寫入~~ → ✅ 已驗證 SET_FEATURE keymap Write（E5→F13 成功）。
 6. ~~**存檔命令修正**~~ → `04 EA 02 12 00 00 00 00`（profile=0）回 0xC0，
    拔插後讀回一致（flash 持久化成立）。
-7. **巨集寫入**：協定已還原，HID usage code 編碼，待實機測試 Write 方向。
+7. ~~**巨集寫入**~~ → report 9 分 4 包 Write 已驗證；E5 播出寫入的 `z`。
 8. ~~**CLI 工具**~~ → 2026-08-16 唯讀 CLI `src/z12ctl.py` 已可用（info / keymap dump|get / macro list|get / profile get|list / led get）。寫入子命令尚未做。
 
 ## 風險

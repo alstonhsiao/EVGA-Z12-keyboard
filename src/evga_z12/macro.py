@@ -174,6 +174,106 @@ def _read_macro_data_pack(dev: Z12Device, macro_idx: int, pack_idx: int) -> byte
     raise HIDError(last_err)
 
 
+def encode_key_taps(usages: list[int], delay_ms: int = 20) -> bytes:
+    """Encode HID usages as delay-down-delay-up taps (on-device format)."""
+    if delay_ms < 0 or delay_ms > 0xFFFF:
+        raise ValueError("delay_ms must be 0-65535")
+    out = bytearray()
+    delay = bytes([0x01, delay_ms & 0xFF, (delay_ms >> 8) & 0xFF])
+    for usage in usages:
+        if not (0x04 <= usage <= 0x73 or 0xE0 <= usage <= 0xE7):
+            raise ValueError(f"unsupported HID usage 0x{usage:02x} in macro tap")
+        out += delay
+        out.append(usage)
+        out += delay
+        out.append(usage | 0x80)
+    if len(out) > 964:
+        raise ValueError("macro action data exceeds firmware limit")
+    return bytes(out)
+
+
+def _build_write_template(
+    name: str,
+    action_bytes: bytes,
+    run_method: int = 0x01,
+) -> bytes:
+    """Build the 1024B MacroUsbFeatureReport body (serialized[8..1031])."""
+    name_b = name.encode("utf-8")
+    if len(name_b) > 50:
+        raise ValueError("macro name longer than 50 bytes UTF-8")
+    if len(action_bytes) > 967:
+        raise ValueError("macro action data longer than 967 bytes")
+    payload = bytearray(1024)
+    payload[0] = len(name_b)
+    payload[1 : 1 + len(name_b)] = name_b
+    payload[51] = run_method
+    payload[52] = 0
+    payload[53] = 0
+    payload[54] = len(action_bytes) & 0xFF
+    payload[55] = (len(action_bytes) >> 8) & 0xFF
+    payload[56 : 56 + len(action_bytes)] = action_bytes
+    payload[1023] = 0x01  # MacroStatusOfUse = in use
+    return bytes(payload)
+
+
+def write_macro(
+    dev: Z12Device,
+    macro_idx: int,
+    name: str,
+    action_bytes: bytes,
+    run_method: int = 0x01,
+) -> MacroInfo:
+    """Write a macro as 4 MacroData packs (report 9, Direction=Write).
+
+    Verified on-device 2026-08-16: slot #3, name z12test, F13 tap.
+    Each pack is SET once. 150 ms between packs (Unleash ExecuteReport).
+
+    Raises:
+        ValueError: bad index / name / payload.
+        HIDError: a pack failed twice.
+    """
+    if macro_idx < 1 or macro_idx > protocol.MACRO_TOTAL_COUNT:
+        raise ValueError(f"macro index must be 1-{protocol.MACRO_TOTAL_COUNT}")
+    template = _build_write_template(name, action_bytes, run_method)
+    for pack_idx in range(protocol.MACRO_PACK_COUNT):
+        chunk = template[pack_idx * 256 : (pack_idx + 1) * 256]
+        if not _write_macro_pack(dev, macro_idx, pack_idx, chunk):
+            time.sleep(0.15)
+            if not _write_macro_pack(dev, macro_idx, pack_idx, chunk):
+                raise HIDError(
+                    f"macro write pack {pack_idx} for #{macro_idx} failed twice"
+                )
+        time.sleep(0.15)
+    return read_macro(dev, macro_idx)
+
+
+def _write_macro_pack(
+    dev: Z12Device, macro_idx: int, pack_idx: int, data256: bytes
+) -> bool:
+    chk = (-sum(data256)) & 0xFF
+    payload = bytearray(protocol.REPORT_MACRO_USB_SIZE - 1)
+    payload[0] = protocol.HEADER1
+    payload[1] = protocol.MACRO_DIR_WRITE
+    payload[2] = protocol.MACRO_CMD_DATA
+    payload[3] = macro_idx
+    payload[4] = pack_idx
+    payload[5] = 0x00
+    payload[6] = chk
+    payload[7 : 7 + protocol.MACRO_DATA_PAYLOAD] = data256
+    resp = dev.send_once(
+        protocol.REPORT_MACRO_USB,
+        protocol.REPORT_MACRO_USB_SIZE,
+        bytes(payload),
+        get_count=3,
+        first_wait=0.15,
+    )
+    # GET payload is often stale; accept C0, or echoed data matching our pack.
+    echo = bytes(resp[8 : 8 + protocol.MACRO_DATA_PAYLOAD])
+    if resp[6] == protocol.RESPONSE_SUCCESS:
+        return True
+    return resp[7] == chk and echo == data256
+
+
 def read_macro(dev: Z12Device, macro_idx: int) -> MacroInfo:
     """Read a complete macro: status, name, and 4 data packs.
 

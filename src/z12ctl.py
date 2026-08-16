@@ -11,6 +11,7 @@ Usage:
     z12ctl keymap set <position> <binding> [--save]
     z12ctl macro list                     # macro status + names
     z12ctl macro get <index>              # single macro with decoded actions
+    z12ctl macro set <index> --name NAME KEY [KEY ...]
     z12ctl profile get                    # current profile number
     z12ctl profile list                   # profiles 1-9
     z12ctl profile save                   # write RAM to flash (profile=0)
@@ -41,7 +42,14 @@ from evga_z12.led import (
     read_led_mode,
     write_lighting_effect_mode,
 )
-from evga_z12.macro import MacroInfo, read_macro, read_macro_name, read_macro_status
+from evga_z12.macro import (
+    MacroInfo,
+    encode_key_taps,
+    read_macro,
+    read_macro_name,
+    read_macro_status,
+    write_macro,
+)
 from evga_z12.profile import get_profile_number, save_profile, scan_profiles, set_profile
 
 # --- Output helpers ---
@@ -234,6 +242,64 @@ def cmd_macro_get(args: argparse.Namespace) -> int:
             print(_format_macro_action(i, action))
     else:
         print("  (no actions)")
+    return 0
+
+
+def cmd_macro_set(args: argparse.Namespace) -> int:
+    """Write a short tap-sequence macro into a slot (report 9, 4 packs)."""
+    idx = int(args.index)
+    if idx < 1 or idx > protocol.MACRO_TOTAL_COUNT:
+        print(f"Error: macro index must be 1-{protocol.MACRO_TOTAL_COUNT}", file=sys.stderr)
+        return 2
+    usages: list[int] = []
+    for token in args.keys:
+        try:
+            kd = parse_binding(token)
+        except ValueError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 2
+        if kd.function != 0x00 or kd.param1 != 0 or kd.param3 != 0 or kd.param2 == 0:
+            print(
+                f"Error: {token!r} is not a plain key (no modifiers/macros yet)",
+                file=sys.stderr,
+            )
+            return 2
+        usages.append(kd.param2)
+    try:
+        action_bytes = encode_key_taps(usages, delay_ms=args.delay)
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 2
+
+    print("=== Macro Set ===")
+    print(f"  Index:  #{idx:02d}")
+    print(f"  Name:   {args.name!r}")
+    print(f"  Keys:   {' '.join(args.keys)}  ({len(action_bytes)} bytes)")
+    print("  Please stop typing.")
+
+    with Z12Device() as dev:
+        if not args.force:
+            try:
+                existing = read_macro(dev, idx)
+            except HIDError:
+                existing = None
+            if existing is not None and existing.data_length > 0:
+                print(
+                    f"Error: #{idx} already has {existing.data_length}B "
+                    f"({existing.name!r}). Pass --force to overwrite.",
+                    file=sys.stderr,
+                )
+                return 2
+        try:
+            info = write_macro(dev, idx, args.name, action_bytes)
+        except (HIDError, ValueError) as exc:
+            print(f"Error writing: {exc}", file=sys.stderr)
+            return 1
+        print(_format_macro_summary(info))
+        if info.actions:
+            print("  Decoded actions:")
+            for i, action in enumerate(info.actions):
+                print(_format_macro_action(i, action))
     return 0
 
 
@@ -535,6 +601,21 @@ def build_parser() -> argparse.ArgumentParser:
     macro_get = macro_sub.add_parser("get", help="show a single macro with decoded actions")
     macro_get.add_argument("index", type=int, help="macro index (1-100)")
     macro_get.set_defaults(func=cmd_macro_get)
+
+    macro_set = macro_sub.add_parser(
+        "set",
+        help="write a tap-sequence macro (plain keys only)",
+    )
+    macro_set.add_argument("index", type=int, help="macro index 1-100")
+    macro_set.add_argument("--name", required=True, help="UTF-8 name (max 50 bytes)")
+    macro_set.add_argument("keys", nargs="+", help="plain keys: F13 A Space ...")
+    macro_set.add_argument("--delay", type=int, default=20, help="inter-tap delay ms")
+    macro_set.add_argument(
+        "--force",
+        action="store_true",
+        help="overwrite a slot that already has data",
+    )
+    macro_set.set_defaults(func=cmd_macro_set)
 
     # profile
     profile_parser = sub.add_parser("profile", help="profile operations")
