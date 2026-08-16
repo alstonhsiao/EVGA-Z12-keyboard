@@ -1,9 +1,11 @@
 [project]
 name = "evga-z12"
-version = "0.1.0"
-description = "EVGA Z12 keyboard configuration tool (macOS/Linux)"
+version = "0.1.0a1"
+description = "Experimental CLI to configure an EVGA Z12 keyboard on macOS via HID feature reports"
+readme = "README.md"
+license = { file = "LICENSE" }
 requires-python = ">=3.10"
-dependencies = ["hidapi>=0.14.0"]
+dependencies = ["hid>=1.0.0"]
 
 [project.scripts]
 z12ctl = "z12ctl:main"
@@ -15,14 +17,14 @@ src = ["src"]
 
 [tool.ruff.lint]
 select = [
-    "E",    # pycodestyle errors
-    "W",    # pycodestyle warnings
-    "F",    # pyflakes
-    "I",    # isort
-    "UP",   # pyupgrade
+    "E",
+    "W",
+    "F",
+    "I",
+    "UP",
 ]
 ignore = [
-    "E402", # module-level import not at top (used in keymap.py for circular import workaround)
+    "E402",
 ]
 
 [tool.ruff.lint.isort]

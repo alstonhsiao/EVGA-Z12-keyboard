@@ -1,97 +1,144 @@
-# EVGA Z12 鍵盤設定工具
+# EVGA Z12 config tool
 
-在 macOS（以及之後的 Linux）上設定 [EVGA Z12 RGB Gaming Keyboard](https://www.evga.com/products/product.aspx?pn=834-W0-12US-KR)，不依賴官方 Windows 軟體 **EVGA Unleash RGB**。
+**Status: 0.1.0-alpha.** Experimental. Tested on one macOS machine with one
+keyboard (`3842:2612`). Not a replacement for EVGA Unleash RGB.
 
-官方沒有 macOS / Linux 版。鍵盤插上 Mac 就能打字，但左邊五顆巨集鍵、全鍵重映射、五區 RGB、onboard 設定檔都改不了。這個專案要自己做那個設定程式。
+Configure an [EVGA Z12](https://www.evga.com/products/product.aspx?pn=834-W0-12US-KR)
+from macOS (Linux untested) using HID feature reports. Settings are stored
+**on the keyboard**, so they follow the device to another computer.
 
-## 結論：可以自己做
+Official Unleash RGB is Windows-only. This tool can read and write keymap,
+short macros, profiles, and LED *modes*. It does **not** update firmware.
 
-2026-08-15 已在本機接上實機確認：
+---
 
-| 問題 | 答案 |
-|------|------|
-| Mac 能不能當鍵盤用？ | 能。標準 USB HID，系統已辨識為 `EVGA Z12 Gaming Keyboard`。 |
-| 有沒有現成開源設定工具？ | **沒有完整的。** [OpenRGB](https://openrgb.org/) 只做了 Z15/Z20 的 **RGB**，Z12 的 issue [#2670](https://gitlab.com/CalcProgrammer1/OpenRGB/-/issues/2670) 從 2022 開到現在，缺 USB capture。沒有人做過按鍵映射。 |
-| 設定是不是寫在鍵盤裡？ | 是。Unleash 宣稱最多 **9 組 onboard profile**，換電腦不用重設。 |
-| 協定從哪來？ | HID feature report。Vendor collection 是 Usage Page `0x08` / Usage `0x4B`，跟 OpenRGB 偵測 Z15/Z20 的用法相同。 |
-| 我們能不能寫程式？ | **能。** RGB 幾乎可以從 OpenRGB 的 Z15 驅動改長度移植。按鍵映射 / 巨集需要在 Windows 上對 Unleash 做 USB sniff，或先做只讀探測。 |
+# 中文
 
-詳細擷取與封包假設見 [`docs/research.md`](docs/research.md)。開發約束見 [`AGENTS.md`](AGENTS.md)。
+**0.1.0-alpha。** 實驗性質。只在一台 Mac、一把 `3842:2612` 上驗證過。
+不是 Unleash 的完整替代品。設定寫在鍵盤 onboard，拔到別台電腦仍然有效。
 
-## 這把鍵盤能改什麼
+## 風險（寫入前請讀）
 
-EVGA Unleash RGB（Windows）提供的能力，也就是本專案想覆蓋的範圍：
+- 寫入會立刻改鍵盤 RAM；`--save` / `profile save` 會寫進 flash。
+- 改錯 keymap 可能讓某些鍵沒反應。先 `keymap get` / `keymap dump`，記下原值。
+- **不要**做韌體更新。本專案沒有、也不會提供刷機。
+- 只開 HID **介面 1**（vendor `0x08` / `0x4B`）。不要搶 boot keyboard（介面 0）。
+- 作者不保證你的鍵盤不會被改亂。自用風險自負。
 
-- 左側 5 顆可程式巨集鍵（含 Game Mode / `E` 鍵）
-- 幾乎所有按鍵可重映射，另有一層 Shift 層
-- 巨集編輯器
-- 五區 RGB（不是單鍵 RGB），16.7M 色
-- 最多 9 組存在鍵盤裡的設定檔
-- 輪詢率（出廠預設 1000 Hz）
-- 韌體更新（**本專案不做**，風險太高）
-
-Z12 是薄膜鍵盤，不是機械、不能換軸，也沒有 Z20 的 TOF 感測器。
-
-## 硬體識別
-
-本機實測：
+## 已測硬體
 
 ```
 VID:PID     3842:2612
-名稱        EVGA Z12 Gaming Keyboard
+Product     EVGA Z12 Gaming Keyboard
 bcdDevice   0xA01D
-USB         2.0 Full Speed (12 Mb/s), 500 mA
 ```
 
-同一家族、OpenRGB 已支援 RGB 的型號：
+UK 版 `3842:2622`、Linux、Z15/Z20 **未測**。
 
-| 型號 | PID |
-|------|-----|
-| Z15 ANSI | `3842:2608` |
-| Z15 ISO  | `3842:260E` |
-| Z20 ANSI | `3842:260A` |
-| Z20 UK   | `3842:2610` |
-| **Z12**  | **`3842:2612`**（尚未被 OpenRGB 收錄） |
+## 安裝（macOS）
 
-## 現況
+需要 Python 3.10+、Homebrew 的 hidapi，以及系統「輸入監控」權限。
 
-協定已還原並實機驗證。唯讀 CLI 可用：
-
+```bash
+brew install hidapi
+git clone https://github.com/alstonhsiao/EVGA-Z12-keyboard.git
+cd EVGA-Z12-keyboard
+python3 -m venv .venv
+.venv/bin/pip install hid
 ```
+
+第一次執行若打不開裝置：
+
+**系統設定 → 隱私權與安全性 → 輸入監控**，勾選你用來跑 Python / Terminal 的 App。
+
+```bash
+.venv/bin/python src/z12ctl.py info
+```
+
+應看到 `VID:PID 0x3842:0x2612` 與介面 1。
+
+## 常用命令
+
+```bash
 .venv/bin/python src/z12ctl.py info
 .venv/bin/python src/z12ctl.py keymap dump
-.venv/bin/python src/z12ctl.py keymap get E1
+.venv/bin/python src/z12ctl.py keymap get E5
 .venv/bin/python src/z12ctl.py keymap set E5 F13          # RAM only
 .venv/bin/python src/z12ctl.py keymap set E5 F13 --save   # RAM + flash
-.venv/bin/python src/z12ctl.py profile save               # persist current RAM
-.venv/bin/python src/z12ctl.py macro list
-.venv/bin/python src/z12ctl.py macro get 6
-.venv/bin/python src/z12ctl.py macro set 3 --name z12test F13
 .venv/bin/python src/z12ctl.py profile get
+.venv/bin/python src/z12ctl.py profile set 2
+.venv/bin/python src/z12ctl.py profile save
+.venv/bin/python src/z12ctl.py macro list
+.venv/bin/python src/z12ctl.py macro get 3
+.venv/bin/python src/z12ctl.py macro set 3 --name hello z
 .venv/bin/python src/z12ctl.py led get
 .venv/bin/python src/z12ctl.py led set StaticOn --sub 2
 .venv/bin/python src/z12ctl.py led set RainbowWave --sub 2 --save
 ```
 
-需要 `.venv/`（`hid` 套件）以及 macOS「系統設定 → 隱私權與安全性 → 輸入監控」授權。只開介面 1（vendor collection），不碰 boot keyboard。
+`keymap set` 的 binding 例如：`F13`、`LCtrl+C`、`disable`、`macro:3`、`Mute`。  
+`macro set` 目前只接受**單鍵 tap**（`z`、`F13`）。已有資料的槽要加 `--force`。  
+`profile set` 會載入該號 flash；RAM 裡還沒 `save` 的修改會丟掉。
 
-| 已完成 | 尚未做成 CLI |
-|--------|----------------|
-| keymap 讀取（121 鍵，含 Shift 層參數） | 重置 profile |
-| keymap 寫入（`keymap set`，已實機驗證） | 巨集刪除 |
-| 巨集寫入（`macro set`，plain key taps） | |
-| 存檔（`profile save`，profile=0，拔插後仍在） | LED 各模式參數（顏色/速度） |
-| LED 模式切換（`led set StaticOn` 等） | |
-| 巨集讀取（report 9/10，HID usage 編碼） | report 6/8（macOS hidapi 讀不到） |
-| profile 編號讀取（1–9） | GameMode / FN 角色鍵（刻意拒絕改寫） |
-| report 7 LED 模式參數讀取 | |
+## 能做 / 還不能做
 
-詳細擷取與封包見 [`docs/research.md`](docs/research.md)。開發約束見 [`AGENTS.md`](AGENTS.md)。
+| 可以 | 還沒有 |
+|------|--------|
+| 讀寫 121 鍵 keymap | 巨集刪除、組合鍵巨集、滑鼠巨集 |
+| 存檔到 flash（`profile save`） | 重置 profile |
+| 切換 profile 1–9 | LED 顏色 / 速度（只能切模式） |
+| 切 LED 模式（Off / Static / Rainbow…） | report 6/8（macOS hidapi 讀不到） |
+| 寫短巨集並 onboard 播放 | 自動化測試、Linux 實測 |
+| | 改 GameMode / FN 角色（刻意拒絕） |
 
-## 為什麼不直接用 OpenRGB
+## 文件
 
-OpenRGB 只控制燈。Z12 甚至還沒進支援清單。本專案要的是 **RatSlap 那類東西**：映射、巨集、profile，順便把燈一起做。RGB 做穩之後，可以把 Z12 的燈控回饋給 OpenRGB。
+| 檔案 | 內容 |
+|------|------|
+| [`docs/research.md`](docs/research.md) | 實機協定與測試紀錄 |
+| [`AGENTS.md`](AGENTS.md) | 給開發 agent 的規則（含不可亂送封包） |
+| [`docs/troubleshooting.md`](docs/troubleshooting.md) | 惡意 repo、HID 快取等教訓 |
 
 ## 授權
 
-尚未選定。若大量引用 OpenRGB 的 Z15 控制器，那邊是 **GPL-2.0-or-later**，衍生的協定實作需要相容。
+[MIT](LICENSE)。沒有保固。
+
+---
+
+# English
+
+**0.1.0-alpha.** Experimental CLI for the EVGA Z12 on macOS. Settings live
+in onboard memory. Not a full Unleash replacement. Firmware updates are
+out of scope.
+
+### Risks
+
+Writes change the keyboard immediately. `--save` persists them across
+unplug. Dump bindings before you change them. Do not flash firmware.
+Only open HID interface 1. No warranty.
+
+### Install (macOS)
+
+```bash
+brew install hidapi
+git clone https://github.com/alstonhsiao/EVGA-Z12-keyboard.git
+cd EVGA-Z12-keyboard
+python3 -m venv .venv
+.venv/bin/pip install hid
+```
+
+Grant **Input Monitoring** to Terminal (or your Python app), then:
+
+```bash
+.venv/bin/python src/z12ctl.py info
+```
+
+Tested only on `3842:2612`. PID `2622` and Linux are untested.
+
+### What works
+
+Keymap read/write, profile get/set/save, LED *mode* switch, short
+onboard macros (plain key taps). See the Chinese command list above
+(same commands).
+
+License: [MIT](LICENSE).

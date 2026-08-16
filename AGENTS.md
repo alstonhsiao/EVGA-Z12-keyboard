@@ -4,11 +4,9 @@ EVGA Z12 鍵盤設定工具（macOS / Linux）。目標是在沒有官方 Unleas
 （Windows only）的情況下，用 HID feature report 讀寫鍵盤的 onboard
 設定：按鍵映射、巨集、五區 RGB、最多 9 組內建設定檔。
 
-本目錄已過探測階段：有 `src/evga_z12/` 協定函式庫與唯讀 CLI
-`src/z12ctl.py`（Python 3 + hidapi）。keymap SET_FEATURE 寫入已用
-`src/test_write.py` 驗證，但 CLI 尚未暴露寫入子命令。官方軟體只支援
-Windows；macOS 上鍵盤當一般 USB HID 鍵盤可用，改映射 / 巨集 / 燈光
-走本專案的 HID feature report。
+本目錄已過探測階段：`src/evga_z12/` + CLI `src/z12ctl.py`（Python 3 +
+`hid`）。讀寫 keymap / profile / LED 模式 / 短巨集均已實機驗證。
+版本 **0.1.0-alpha**，授權 MIT。官方軟體只支援 Windows。
 
 ---
 
@@ -16,8 +14,8 @@ Windows；macOS 上鍵盤當一般 USB HID 鍵盤可用，改映射 / 巨集 / �
 
 | 要做什麼 | 先讀哪個檔案 |
 |----------|-------------|
-| 了解專案目的、可行性、現況 | [`README.md`](README.md) |
-| 跑唯讀 CLI（keymap / 巨集 / profile / LED） | `src/z12ctl.py`（`.venv/bin/python src/z12ctl.py --help`） |
+| 了解專案目的、可行性、現況、安裝 | [`README.md`](README.md) |
+| 跑 CLI | `src/z12ctl.py`（`.venv/bin/python src/z12ctl.py --help`） |
 | 看 2026-08-15 實機 HID 擷取與協定比對 | [`docs/research.md`](docs/research.md) |
 | 動到 USB / HID report / 按鍵映射 / 巨集 | `docs/research.md`（協定文件尚未獨立成 usb-protocol） |
 | 對照 OpenRGB 已還原的 Z15/Z20 RGB 協定 | OpenRGB `Controllers/EVGAUSBController/EVGAKeyboardController/` |
