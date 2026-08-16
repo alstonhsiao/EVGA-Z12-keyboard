@@ -11,7 +11,38 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from . import protocol
-from .hid_io import Z12Device
+from .hid_io import HIDError, Z12Device
+
+# Reverse lookups for binding parser
+_HID_NAME_TO_USAGE = {name.lower(): code for code, name in protocol.HID_USAGE_NAMES.items()}
+_CONSUMER_NAME_TO_CODE = {
+    name.lower(): code for code, name in protocol.HID_CONSUMER_NAMES.items()
+}
+_MOD_ALIASES = {
+    "lctrl": 0x01, "ctrl": 0x01, "control": 0x01,
+    "lshift": 0x02, "shift": 0x02,
+    "lalt": 0x04, "alt": 0x04, "option": 0x04, "opt": 0x04,
+    "lgui": 0x08, "lwin": 0x08, "win": 0x08, "cmd": 0x08,
+    "command": 0x08, "super": 0x08,
+    "rctrl": 0x10,
+    "rshift": 0x20,
+    "ralt": 0x40, "altgr": 0x40,
+    "rgui": 0x80, "rwin": 0x80,
+}
+_HID_ALIASES = {
+    "esc": 0x29, "escape": 0x29,
+    "return": 0x28, "enter": 0x28,
+    "space": 0x2C, "spacebar": 0x2C,
+    "bksp": 0x2A, "backspace": 0x2A,
+    "del": 0x4C, "delete": 0x4C,
+    "ins": 0x49, "insert": 0x49,
+    "pgup": 0x4B, "pageup": 0x4B,
+    "pgdn": 0x4E, "pagedown": 0x4E,
+}
+
+# Role keys: firmware treats these as identity, not remappable outputs.
+# Writing untested Function 0x04/0x05 parameters is forbidden (function-codes.md).
+_PROTECTED_POSITIONS = {0x00, 0x6C}  # GameMode, FN
 
 # Which positions to scan in dump_keymap(). Excludes LED zones (0xA0+)
 # which are not physical keys and return 0xC1 on keymap read.
@@ -137,8 +168,133 @@ def read_key(dev: Z12Device, position: int, layer: int = protocol.SUB_PRIMARY_KE
     )
 
 
-# Import here to avoid circular import at module level
-from .hid_io import HIDError  # noqa: E402
+def _build_write_payload(
+    position: int, key_define: KeyDefine, layer: int
+) -> bytes:
+    """Build report 4 keymap write payload (bytes 1-16).
+
+    Layout matches the on-device write that succeeded in test_write.py:
+    EA 02 07 00 <layer> 00 <pos> <fn> <p1> <p2> <p3> + 5 zeros.
+    """
+    return bytes([
+        protocol.HEADER1,
+        protocol.HEADER2,
+        protocol.CMD_KEY_FUNCTION_RAM,
+        protocol.SUB_WRITE,
+        layer,
+        0x00,
+        position,
+        key_define.function,
+        key_define.param1,
+        key_define.param2,
+        key_define.param3,
+    ]) + bytes(5)
+
+
+def write_key(
+    dev: Z12Device,
+    position: int,
+    key_define: KeyDefine,
+    layer: int = protocol.SUB_PRIMARY_KEY,
+) -> KeyEntry:
+    """Write a key's KeyDefine (one SET_FEATURE), then read it back.
+
+    Raises:
+        ValueError: protected position (GameMode / FN) or role function.
+        HIDError: device returned non-success.
+    """
+    if position in _PROTECTED_POSITIONS:
+        name = protocol.LED_KEY_POSITIONS.get(position, f"0x{position:02x}")
+        raise ValueError(f"refusing to remap protected key {name} (0x{position:02x})")
+    if key_define.function in (0x04, 0x05):
+        raise ValueError("refusing to write FnKey/EKey (untested parameters)")
+
+    payload = _build_write_payload(position, key_define, layer)
+    resp = dev.send_once_report4(payload)
+    status = resp[6]
+    if status != protocol.RESPONSE_SUCCESS:
+        raise HIDError(f"write_key(position=0x{position:02x}): status 0x{status:02x}")
+    return read_key(dev, position, layer)
+
+
+def parse_binding(text: str) -> KeyDefine:
+    """Parse a binding string into a KeyDefine.
+
+    Examples:
+        F13
+        LCtrl+C
+        Ctrl+Shift+C
+        disable
+        macro:6
+        Mute
+        0x68
+    """
+    raw = text.strip()
+    if not raw:
+        raise ValueError("empty binding")
+    lowered = raw.lower()
+
+    if lowered in {"disable", "disabled", "off", "none"}:
+        return KeyDefine(0xFF, 0, 0, 0)
+
+    if lowered.startswith("macro:") or lowered.startswith("macro#"):
+        idx_str = raw.split(":", 1)[-1] if ":" in raw else raw.split("#", 1)[-1]
+        try:
+            idx = int(idx_str, 0)
+        except ValueError as exc:
+            raise ValueError(f"invalid macro index: {idx_str!r}") from exc
+        if idx < 1 or idx > protocol.MACRO_TOTAL_COUNT:
+            raise ValueError(f"macro index must be 1-{protocol.MACRO_TOTAL_COUNT}")
+        # Default runMethod = OneShot_KeyRelease (0x01), matching E1–E5.
+        return KeyDefine(0x03, idx, 0x01, 0)
+
+    if lowered in {"fnkey", "fn", "ekey"}:
+        raise ValueError("FnKey/EKey are role markers and cannot be assigned")
+
+    consumer = _CONSUMER_NAME_TO_CODE.get(lowered)
+    if consumer is not None:
+        return KeyDefine(0x02, consumer & 0xFF, (consumer >> 8) & 0xFF, 0)
+
+    parts = [p for p in raw.split("+") if p]
+    if not parts:
+        raise ValueError(f"invalid binding: {text!r}")
+
+    modifier = 0
+    keys: list[int] = []
+    for part in parts:
+        token = part.strip()
+        bit = _MOD_ALIASES.get(token.lower())
+        if bit is not None:
+            modifier |= bit
+            continue
+        usage = _parse_hid_usage(token)
+        keys.append(usage)
+
+    if not keys and modifier:
+        # Pure modifier (e.g. LCtrl) — KeyDefine stores it in Parameter1.
+        return KeyDefine(0x00, modifier, 0, 0)
+    if not keys:
+        raise ValueError(f"invalid binding: {text!r}")
+    if len(keys) > 2:
+        raise ValueError("at most two simultaneous keys plus modifiers")
+    key1 = keys[0]
+    key2 = keys[1] if len(keys) > 1 else 0
+    return KeyDefine(0x00, modifier, key1, key2)
+
+
+def _parse_hid_usage(token: str) -> int:
+    if token.lower().startswith("0x"):
+        value = int(token, 16)
+        if not (0x00 <= value <= 0xFF):
+            raise ValueError(f"HID usage out of range: {token}")
+        return value
+    usage = _HID_ALIASES.get(token.lower())
+    if usage is not None:
+        return usage
+    usage = _HID_NAME_TO_USAGE.get(token.lower())
+    if usage is not None:
+        return usage
+    raise ValueError(f"unknown key: {token!r}")
 
 
 def dump_keymap(dev: Z12Device, layer: int = protocol.SUB_PRIMARY_KEY) -> list[KeyEntry]:

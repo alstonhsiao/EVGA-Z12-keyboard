@@ -8,10 +8,12 @@ Usage:
     z12ctl info                          # device info
     z12ctl keymap dump [--layer secondary]  # full 121-key mapping
     z12ctl keymap get <position>          # single key
+    z12ctl keymap set <position> <binding> [--save]
     z12ctl macro list                     # macro status + names
     z12ctl macro get <index>              # single macro with decoded actions
     z12ctl profile get                    # current profile number
     z12ctl profile list                   # profiles 1-9
+    z12ctl profile save                   # write RAM to flash (profile=0)
     z12ctl led get                        # report 7 LED mode parameters
 
 All protocol constants are verified against on-device captures
@@ -30,10 +32,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from evga_z12 import protocol
 from evga_z12.hid_io import DeviceNotFoundError, HIDError, Z12Device
-from evga_z12.keymap import KeyEntry, dump_keymap, read_key
+from evga_z12.keymap import KeyEntry, dump_keymap, parse_binding, read_key, write_key
 from evga_z12.led import decode_lighting_effect_mode, read_all_led_modes, read_led_mode
 from evga_z12.macro import MacroInfo, read_macro, read_macro_name, read_macro_status
-from evga_z12.profile import get_profile_number, scan_profiles
+from evga_z12.profile import get_profile_number, save_profile, scan_profiles
 
 # --- Output helpers ---
 
@@ -118,13 +120,61 @@ def cmd_keymap_dump(args: argparse.Namespace) -> int:
 def cmd_keymap_get(args: argparse.Namespace) -> int:
     """Read a single key's mapping."""
     pos = _parse_position(args.position)
+    layer = protocol.SUB_SECONDARY_KEY if args.layer == "secondary" else protocol.SUB_PRIMARY_KEY
     with Z12Device() as dev:
         try:
-            entry = read_key(dev, pos)
+            entry = read_key(dev, pos, layer=layer)
         except HIDError as exc:
             print(f"Error: {exc}", file=sys.stderr)
             return 1
     print(_format_key_entry(entry, show_raw=True))
+    return 0
+
+
+def cmd_keymap_set(args: argparse.Namespace) -> int:
+    """Write a single key's mapping. Immediately live in RAM."""
+    pos = _parse_position(args.position)
+    try:
+        binding = parse_binding(args.binding)
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 2
+    layer = protocol.SUB_SECONDARY_KEY if args.layer == "secondary" else protocol.SUB_PRIMARY_KEY
+
+    print("=== Keymap Set ===")
+    print(f"  Position:  0x{pos:02X} ({protocol.LED_KEY_POSITIONS.get(pos, '?')})")
+    print(f"  Layer:     {args.layer}")
+    print(f"  Binding:   {binding.describe()}")
+    print(f"  Save:      {'yes (profile=0)' if args.save else 'no (RAM only)'}")
+    print("  Please stop typing.")
+
+    with Z12Device() as dev:
+        try:
+            before = read_key(dev, pos, layer=layer)
+        except HIDError as exc:
+            print(f"Error reading current value: {exc}", file=sys.stderr)
+            return 1
+        print(f"  Before:    {before.key_define.describe()}")
+
+        try:
+            after = write_key(dev, pos, binding, layer=layer)
+        except (HIDError, ValueError) as exc:
+            print(f"Error writing: {exc}", file=sys.stderr)
+            return 1
+        print(f"  After:     {after.key_define.describe()}")
+
+        wrote_ok = after.key_define == binding
+        if not wrote_ok:
+            print("  Read-back does not match the requested binding.", file=sys.stderr)
+            return 1
+
+        if args.save:
+            try:
+                save_profile(dev)
+            except HIDError as exc:
+                print(f"Error saving profile: {exc}", file=sys.stderr)
+                return 1
+            print("  Saved to flash (profile=0).")
     return 0
 
 
@@ -189,6 +239,29 @@ def cmd_profile_get(args: argparse.Namespace) -> int:
             print(f"Error: {exc}", file=sys.stderr)
             return 1
     print(f"Current profile: {num}")
+    return 0
+
+
+def cmd_profile_save(args: argparse.Namespace) -> int:
+    """Write current RAM profile to onboard flash (profile=0)."""
+    print("=== Profile Save ===")
+    print("  Command: 04 EA 02 12 00 00 00 00  (current profile)")
+    print("  Please stop typing.")
+    with Z12Device() as dev:
+        try:
+            current = get_profile_number(dev)
+        except HIDError as exc:
+            print(f"Error reading profile: {exc}", file=sys.stderr)
+            return 1
+        print(f"  Current profile: {current}")
+        try:
+            resp = save_profile(dev)
+        except HIDError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 1
+        status = resp[6]
+        print(f"  Response: {resp.hex(' ')}")
+        print(f"  Status:   0x{status:02x} Success — RAM written to flash")
     return 0
 
 
@@ -313,7 +386,7 @@ def build_parser() -> argparse.ArgumentParser:
     info_parser.set_defaults(func=cmd_info)
 
     # keymap
-    keymap_parser = sub.add_parser("keymap", help="keymap read operations")
+    keymap_parser = sub.add_parser("keymap", help="keymap read/write operations")
     keymap_sub = keymap_parser.add_subparsers(dest="keymap_command", required=True)
 
     keymap_dump = keymap_sub.add_parser("dump", help="dump all 121 key mappings")
@@ -324,7 +397,25 @@ def build_parser() -> argparse.ArgumentParser:
 
     keymap_get = keymap_sub.add_parser("get", help="read a single key")
     keymap_get.add_argument("position", help="position: hex (0x15), decimal (21), or key name (E1)")
+    keymap_get.add_argument("--layer", choices=["primary", "secondary"], default="primary")
     keymap_get.set_defaults(func=cmd_keymap_get)
+
+    keymap_set = keymap_sub.add_parser(
+        "set",
+        help="write a single key (RAM; add --save to persist)",
+    )
+    keymap_set.add_argument("position", help="position: hex, decimal, or key name (E5)")
+    keymap_set.add_argument(
+        "binding",
+        help="F13, LCtrl+C, disable, macro:6, Mute, or HID 0x68",
+    )
+    keymap_set.add_argument("--layer", choices=["primary", "secondary"], default="primary")
+    keymap_set.add_argument(
+        "--save",
+        action="store_true",
+        help="also SaveProfile (profile=0) after a successful write",
+    )
+    keymap_set.set_defaults(func=cmd_keymap_set)
 
     # macro
     macro_parser = sub.add_parser("macro", help="macro read operations")
@@ -346,6 +437,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     profile_list = profile_sub.add_parser("list", help="list profiles 1-9")
     profile_list.set_defaults(func=cmd_profile_list)
+
+    profile_save = profile_sub.add_parser(
+        "save",
+        help="write current RAM profile to flash (profile=0)",
+    )
+    profile_save.set_defaults(func=cmd_profile_save)
 
     # led
     led_parser = sub.add_parser("led", help="LED mode operations")

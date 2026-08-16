@@ -157,6 +157,63 @@ class Z12Device:
         assert last_resp is not None
         return last_resp
 
+    def send_once(
+        self,
+        report_id: int,
+        size: int,
+        payload: bytes | bytearray,
+        get_count: int = 4,
+        first_wait: float = 0.05,
+    ) -> bytes:
+        """SET_FEATURE once, then GET several times (no resend).
+
+        Use this for writes. ``transact`` repeats send+get, which would
+        fire the same write multiple times. SaveProfile was verified with
+        a single SET and four GETs (docs/research.md).
+        """
+        if self._dev is None:
+            raise HIDError("Device not opened (use 'with Z12Device() as dev:')")
+
+        req = bytearray(size)
+        req[0] = report_id
+        for i, b in enumerate(payload):
+            if 1 + i < size:
+                req[1 + i] = b
+        try:
+            self._dev.send_feature_report(bytes(req))
+        except OSError as exc:
+            raise HIDError(f"send_feature_report(report {report_id:#04x}): {exc}") from exc
+
+        time.sleep(first_wait)
+        last_resp: bytes | None = None
+        for _ in range(get_count):
+            try:
+                resp = self._dev.get_feature_report(report_id, size)
+            except OSError as exc:
+                raise HIDError(f"get_feature_report(report {report_id:#04x}): {exc}") from exc
+            if resp is None or len(resp) == 0:
+                raise HIDError(f"get_feature_report(report {report_id:#04x}) returned empty")
+            last_resp = bytes(resp)
+            time.sleep(_INTER_ATTEMPT_DELAY)
+
+        assert last_resp is not None
+        return last_resp
+
+    def send_once_report4(
+        self,
+        payload: bytes | bytearray,
+        get_count: int = 4,
+        first_wait: float = 0.05,
+    ) -> bytes:
+        """Single SET of report 4, then GET ``get_count`` times."""
+        return self.send_once(
+            protocol.REPORT_GENERAL_USB,
+            protocol.REPORT_GENERAL_USB_SIZE,
+            payload,
+            get_count=get_count,
+            first_wait=first_wait,
+        )
+
     def transact_report4(self, payload: bytes | bytearray, discard: int = 3) -> bytes:
         """Convenience wrapper for report 4 (GeneralUsb, 17B).
 

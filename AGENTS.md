@@ -79,13 +79,12 @@ Windows；macOS 上鍵盤當一般 USB HID 鍵盤可用，改映射 / 巨集 / �
 1. ~~安全探測：只讀 GET_FEATURE，確認 report 4/6/7 是否走 `0xEA 0x02`
    家族協定。~~ → **2026-08-16 完成**。report 4/7/9/10 已實機驗證。
 2. ~~讀寫設定檔 / 目前模式（讀）。~~ → GetProfile + report 7 LED 讀取完成。
-3. ~~按鍵重新映射（讀 + SET_FEATURE 寫入驗證）。~~ → 讀取進 CLI；寫入
-   已用 `test_write.py` 驗證，尚未做成 CLI 子命令。
+3. ~~按鍵重新映射（讀 + SET_FEATURE 寫入驗證）。~~ → CLI
+   `keymap get/dump/set`（2026-08-16 實機：E5→F13→還原 macro#3）。
 4. ~~CLI 唯讀整合。~~ → **2026-08-16 完成**（`src/z12ctl.py`）。
-5. ~~存檔命令格式（profile=0）。~~ → **2026-08-16**：
-   `04 EA 02 12 00 00 00 00` 回 0xC0；帶 profile 編號回 0xC1。
-   拔插後讀回一致，flash 持久化成立。巨集寫入尚未實機驗證。
-6. CLI 寫入子命令（keymap / 巨集 / profile / LED）。
+5. ~~存檔命令格式（profile=0）。~~ → CLI `profile save`；拔插後仍在。
+6. CLI 寫入子命令：~~keymap set / profile save~~ 完成。巨集 / LED /
+   SetProfile 尚未做。
 7. 五區 RGB 寫入（report 6 在 macOS 讀不到，改走 report 7）。
 
 ---
@@ -192,5 +191,6 @@ macOS 開 HID 裝置需要「輸入監控」（Input Monitoring）權限。開�
   逆向 + 實機掃描，見 [`docs/key-position-table.md`](docs/key-position-table.md)
   和 [`docs/keymap-scan-result.md`](docs/keymap-scan-result.md)。
 - ~~沒有對 Z12 送過任何設定封包。~~ → GET_FEATURE（report 4/7/9/10）
-  和 SET_FEATURE（report 4 keymap Write）都已驗證。report 6/8 在
-  macOS hidapi 上讀不到。CLI 目前只有讀取子命令。
+  和 SET_FEATURE（report 4 keymap Write + SaveProfile）都已驗證。
+  CLI 已有 `keymap set` 與 `profile save`。report 6/8 在 macOS hidapi
+  上讀不到。巨集寫入尚未做成 CLI。

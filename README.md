@@ -61,6 +61,9 @@ USB         2.0 Full Speed (12 Mb/s), 500 mA
 .venv/bin/python src/z12ctl.py info
 .venv/bin/python src/z12ctl.py keymap dump
 .venv/bin/python src/z12ctl.py keymap get E1
+.venv/bin/python src/z12ctl.py keymap set E5 F13          # RAM only
+.venv/bin/python src/z12ctl.py keymap set E5 F13 --save   # RAM + flash
+.venv/bin/python src/z12ctl.py profile save               # persist current RAM
 .venv/bin/python src/z12ctl.py macro list
 .venv/bin/python src/z12ctl.py macro get 6
 .venv/bin/python src/z12ctl.py profile get
@@ -71,10 +74,12 @@ USB         2.0 Full Speed (12 Mb/s), 500 mA
 
 | 已完成 | 尚未做成 CLI |
 |--------|----------------|
-| keymap 讀取（121 鍵，含 Shift 層參數） | keymap 寫入（`test_write.py` 已驗證 SET_FEATURE） |
-| 巨集讀取（report 9/10，HID usage 編碼） | 巨集寫入 |
-| profile 編號讀取（1–9） | 存檔：`profile=0` 回 0xC0 且拔插後仍在；帶編號回 0xC1 |
-| report 7 LED 模式參數讀取 | report 6/8（macOS hidapi 讀不到） |
+| keymap 讀取（121 鍵，含 Shift 層參數） | 巨集寫入 |
+| keymap 寫入（`keymap set`，已實機驗證） | 切換 / 重置 profile |
+| 存檔（`profile save`，profile=0，拔插後仍在） | LED 寫入 |
+| 巨集讀取（report 9/10，HID usage 編碼） | report 6/8（macOS hidapi 讀不到） |
+| profile 編號讀取（1–9） | GameMode / FN 角色鍵（刻意拒絕改寫） |
+| report 7 LED 模式參數讀取 | |
 
 詳細擷取與封包見 [`docs/research.md`](docs/research.md)。開發約束見 [`AGENTS.md`](AGENTS.md)。
 

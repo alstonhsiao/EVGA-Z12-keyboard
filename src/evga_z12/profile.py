@@ -90,7 +90,37 @@ def set_profile(dev: Z12Device, profile_num: int) -> None:
         profile_num,
     ]) + bytes(9)
 
-    resp = dev.transact_report4(payload)
+    resp = dev.send_once_report4(payload)
     status = resp[6]
     if status != protocol.RESPONSE_SUCCESS:
         raise HIDError(f"set_profile({profile_num}): status 0x{status:02x}")
+
+
+def save_profile(dev: Z12Device) -> bytes:
+    """Save current RAM profile to flash (report 4, MainCommand=0x12).
+
+    On-device: ``04 EA 02 12 00 00 00 00`` returns 0xC0 and survives
+    unplug. ``... 00 01`` (explicit profile number) returns 0xC1.
+    Sends SET_FEATURE once, waits 300 ms, then reads the response.
+
+    Returns:
+        The last GET_FEATURE response.
+
+    Raises:
+        HIDError: if the device returns a non-success status.
+    """
+    payload = bytes([
+        protocol.HEADER1,
+        protocol.HEADER2,
+        protocol.CMD_SAVE_PROFILE,
+        0x00,
+        0x00,
+        0x00,
+        protocol.PROFILE_CURRENT,  # 0 = current profile
+    ]) + bytes(9)
+
+    resp = dev.send_once_report4(payload, get_count=4, first_wait=0.30)
+    status = resp[6]
+    if status != protocol.RESPONSE_SUCCESS:
+        raise HIDError(f"save_profile: status 0x{status:02x}")
+    return resp
