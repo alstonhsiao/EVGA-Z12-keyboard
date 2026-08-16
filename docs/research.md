@@ -546,7 +546,7 @@ offset 8 起 1024B。模板欄位佈局（從拼回的 payload 解析）：
 - **待解決**：report 6/8 在 macOS hidapi 上讀不到（feature report GET 不回應）。
 - ~~**待確認**：存檔命令 `04 EA 02 12 00 00 00 01` 回 0xC1，需測 profile=0。~~
   → **2026-08-16 已確認**：`04 EA 02 12 00 00 00 00` 回 0xC0；帶編號 1 回 0xC1。
-  尚未拔插驗證 flash。
+  拔插後讀回一致，flash 持久化成立。
 - **待驗證**：巨集寫入流程（report 9 Write 分封包）。
 - **待製作**：CLI 工具（整合所有已驗證協定）。
 
@@ -701,7 +701,8 @@ report 7 = 「當前 RAM 中」的 LED/keymap 參數即時讀寫，128B data 段
    `04 EA 02 12 00 00 00 01`（帶 profile 編號 1）回 **0xC1**。
    與 Unleash `SaveProfile(0)` / Pasquotcho 格式一致。只送一次
    SET_FEATURE，profile 編號與 E5/ESC keymap 讀回不變。
-   尚未拔插驗證 flash 是否真的寫入。
+   **2026-08-16 拔插驗證**：拔 USB 再插回後 profile=1、E5=macro#3、
+   ESC=Esc、LED=RainbowWave(0x05/0x02) 全部仍在。flash 持久化成立。
 4. **存檔雖然回 C1，但 RAM 裡的值在重開裝置前不會丟**——存檔是寫 flash，
    C1 可能表示 flash 寫入失敗或參數不對，但 RAM 裡的修改仍有效。
 
@@ -719,8 +720,8 @@ LED 模式命令（0x0C–0x12），不用 report 6。
 3. ~~五區 RGB~~ → report 6 讀不到，但 report 7（ProfileInRAM）能讀 LED 模式參數（0x0C–0x12），已驗證。
 4. ~~讀寫設定檔 / profile~~ → GetProfile 已驗證（profile=1），report 7 能讀 LED 設定。report 8（整組 profile）macOS 讀不到。
 5. ~~按鍵重新映射寫入~~ → ✅ 已驗證 SET_FEATURE keymap Write（E5→F13 成功）。
-6. ~~**存檔命令修正**~~ → `04 EA 02 12 00 00 00 00`（profile=0）回 0xC0。
-   可選：拔插後再讀，確認 flash 持久化。
+6. ~~**存檔命令修正**~~ → `04 EA 02 12 00 00 00 00`（profile=0）回 0xC0，
+   拔插後讀回一致（flash 持久化成立）。
 7. **巨集寫入**：協定已還原，HID usage code 編碼，待實機測試 Write 方向。
 8. ~~**CLI 工具**~~ → 2026-08-16 唯讀 CLI `src/z12ctl.py` 已可用（info / keymap dump|get / macro list|get / profile get|list / led get）。寫入子命令尚未做。
 

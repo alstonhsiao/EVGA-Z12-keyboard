@@ -84,7 +84,7 @@ Windows；macOS 上鍵盤當一般 USB HID 鍵盤可用，改映射 / 巨集 / �
 4. ~~CLI 唯讀整合。~~ → **2026-08-16 完成**（`src/z12ctl.py`）。
 5. ~~存檔命令格式（profile=0）。~~ → **2026-08-16**：
    `04 EA 02 12 00 00 00 00` 回 0xC0；帶 profile 編號回 0xC1。
-   巨集寫入尚未實機驗證。
+   拔插後讀回一致，flash 持久化成立。巨集寫入尚未實機驗證。
 6. CLI 寫入子命令（keymap / 巨集 / profile / LED）。
 7. 五區 RGB 寫入（report 6 在 macOS 讀不到，改走 report 7）。
 

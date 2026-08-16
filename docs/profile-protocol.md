@@ -585,6 +585,7 @@ if ResponseCommand == 0xC0:
 5. `ProfileUsbFeatureReport` 總長是否真的 265 B（欄位 marshal 加總需實測）。
 6. ~~SaveProfile(0) 存的是「當前 RAM profile」還是 profile 0——軟體語意是當前，但鍵盤端是否區分。~~
    → 2026-08-16：`04 EA 02 12 00 00 00 00` 回 0xC0，`... 00 01` 回 0xC1。
-   鍵盤接受 0=當前，不接受在 byte[7] 直接寫 profile 編號 1。尚未拔插驗證 flash。
+   鍵盤接受 0=當前，不接受在 byte[7] 直接寫 profile 編號 1。
+   拔插後讀回一致，flash 持久化成立。
 
 這些都遵守 AGENTS.md 規則 1：**未還原的指令禁止亂送 SET_REPORT**，需先 GET_FEATURE 驗證再寫。

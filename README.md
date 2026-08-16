@@ -73,7 +73,7 @@ USB         2.0 Full Speed (12 Mb/s), 500 mA
 |--------|----------------|
 | keymap 讀取（121 鍵，含 Shift 層參數） | keymap 寫入（`test_write.py` 已驗證 SET_FEATURE） |
 | 巨集讀取（report 9/10，HID usage 編碼） | 巨集寫入 |
-| profile 編號讀取（1–9） | 存檔：`profile=0` 回 0xC0；帶編號回 0xC1。尚未拔插驗證 flash |
+| profile 編號讀取（1–9） | 存檔：`profile=0` 回 0xC0 且拔插後仍在；帶編號回 0xC1 |
 | report 7 LED 模式參數讀取 | report 6/8（macOS hidapi 讀不到） |
 
 詳細擷取與封包見 [`docs/research.md`](docs/research.md)。開發約束見 [`AGENTS.md`](AGENTS.md)。
