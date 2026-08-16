@@ -4,9 +4,11 @@ EVGA Z12 鍵盤設定工具（macOS / Linux）。目標是在沒有官方 Unleas
 （Windows only）的情況下，用 HID feature report 讀寫鍵盤的 onboard
 設定：按鍵映射、巨集、五區 RGB、最多 9 組內建設定檔。
 
-本目錄目前是研究與專案骨架階段，**還沒有可執行的設定程式**。
-官方軟體只支援 Windows；macOS 上鍵盤當一般 USB HID 鍵盤可用，但無法改
-映射 / 巨集 / 燈光。
+本目錄已過探測階段：有 `src/evga_z12/` 協定函式庫與唯讀 CLI
+`src/z12ctl.py`（Python 3 + hidapi）。keymap SET_FEATURE 寫入已用
+`src/test_write.py` 驗證，但 CLI 尚未暴露寫入子命令。官方軟體只支援
+Windows；macOS 上鍵盤當一般 USB HID 鍵盤可用，改映射 / 巨集 / 燈光
+走本專案的 HID feature report。
 
 ---
 
@@ -15,9 +17,16 @@ EVGA Z12 鍵盤設定工具（macOS / Linux）。目標是在沒有官方 Unleas
 | 要做什麼 | 先讀哪個檔案 |
 |----------|-------------|
 | 了解專案目的、可行性、現況 | [`README.md`](README.md) |
+| 跑唯讀 CLI（keymap / 巨集 / profile / LED） | `src/z12ctl.py`（`.venv/bin/python src/z12ctl.py --help`） |
 | 看 2026-08-15 實機 HID 擷取與協定比對 | [`docs/research.md`](docs/research.md) |
-| 動到 USB / HID report / 按鍵映射 | `docs/research.md`（協定文件尚未獨立成 usb-protocol） |
+| 動到 USB / HID report / 按鍵映射 / 巨集 | `docs/research.md`（協定文件尚未獨立成 usb-protocol） |
 | 對照 OpenRGB 已還原的 Z15/Z20 RGB 協定 | OpenRGB `Controllers/EVGAUSBController/EVGAKeyboardController/` |
+| 比對外部 Z12 repo（Pasquotcho 可用、erik 惡意） | [`docs/external-protocol-comparison.md`](docs/external-protocol-comparison.md) |
+| Unleash RGB 軟體逆向分析（EDispNetLib.dll） | [`docs/unleash-reverse-engineering.md`](docs/unleash-reverse-engineering.md) |
+| Profile 讀寫協定（封包結構、命令表） | [`docs/profile-protocol.md`](docs/profile-protocol.md) |
+| 完整 key position 表（113+13 鍵） | [`docs/key-position-table.md`](docs/key-position-table.md) |
+| keymap 全掃描結果（121 鍵實機驗證） | [`docs/keymap-scan-result.md`](docs/keymap-scan-result.md) |
+| 送錯封包 / 鍵盤斷線 / 惡意依賴等事故與教訓 | [`docs/troubleshooting.md`](docs/troubleshooting.md) |
 
 ---
 
@@ -51,6 +60,12 @@ EVGA Z12 鍵盤設定工具（macOS / Linux）。目標是在沒有官方 Unleas
 3. 停損線：同一子任務用同一種方法連錯兩次，停止重試；
    帶完整失敗軌跡（做了什麼、錯誤訊息、已排除什麼）回報使用者，
    不得換個小花樣試第三次。
+4. **外部 repo 先 clone 檢查有無實際原始碼，別被 commit 數 / star 數 /
+   README 行銷文騙。** 反例（2026-08-16）：`erik-berger350/evga-z12-keys-linux`
+   假「132 commits」實為垃圾時間戳 + XOR 混淆的 Roblox 作弊注入器下載頁，
+   web_search 摘要把它描述成「較成熟」是錯的。不要自動下載或執行外部
+   repo 的 release / GitHub Pages 連結。詳見
+   [`docs/troubleshooting.md`](docs/troubleshooting.md)。
 
 ---
 
@@ -61,12 +76,17 @@ EVGA Z12 鍵盤設定工具（macOS / Linux）。目標是在沒有官方 Unleas
 
 優先順序：
 
-1. 安全探測：只讀 GET_FEATURE，確認 report 4/6/7 是否走 `0xEA 0x02`
-   家族協定。
-2. 五區 RGB（OpenRGB Z15 程式幾乎可移植，改 report 6 長度）。
-3. 讀寫設定檔 / 目前模式。
-4. 按鍵重新映射（含左側 5 顆巨集鍵、Shift 層）。
-5. 巨集錄製與寫入。
+1. ~~安全探測：只讀 GET_FEATURE，確認 report 4/6/7 是否走 `0xEA 0x02`
+   家族協定。~~ → **2026-08-16 完成**。report 4/7/9/10 已實機驗證。
+2. ~~讀寫設定檔 / 目前模式（讀）。~~ → GetProfile + report 7 LED 讀取完成。
+3. ~~按鍵重新映射（讀 + SET_FEATURE 寫入驗證）。~~ → 讀取進 CLI；寫入
+   已用 `test_write.py` 驗證，尚未做成 CLI 子命令。
+4. ~~CLI 唯讀整合。~~ → **2026-08-16 完成**（`src/z12ctl.py`）。
+5. ~~存檔命令格式（profile=0）。~~ → **2026-08-16**：
+   `04 EA 02 12 00 00 00 00` 回 0xC0；帶 profile 編號回 0xC1。
+   巨集寫入尚未實機驗證。
+6. CLI 寫入子命令（keymap / 巨集 / profile / LED）。
+7. 五區 RGB 寫入（report 6 在 macOS 讀不到，改走 report 7）。
 
 ---
 
@@ -162,8 +182,15 @@ macOS 開 HID 裝置需要「輸入監控」（Input Monitoring）權限。開�
 
 ## 還沒有的東西（不要假裝存在）
 
-- 沒有 `src/`、沒有 Makefile、沒有測試。
+- ~~沒有 `src/`、沒有 Makefile、沒有測試。~~ → 2026-08-16 新增 `src/`
+  目錄：`evga_z12/` 函式庫、`z12ctl.py` 唯讀 CLI、以及探測腳本
+  （`probe_*.py` / `scan_positions.py` / `test_write.py`）。Python 3
+  + hidapi，`.venv/`。仍沒有 Makefile、沒有自動化測試。lint 用 ruff
+  （`pyproject.toml`）。
 - 沒有獨立 git remote（目前只是資料夾）。
-- 沒有完整按鍵映射表、沒有 USB sniff 原始檔。
-- 沒有對 Z12 送過任何設定封包；report 4/6/7 的 `0xEA` 家族假設
-  尚未用 GET_FEATURE 證實。
+- ~~沒有完整按鍵映射表~~ → 2026-08-16 完成。121 鍵 position 表 + 軟體
+  逆向 + 實機掃描，見 [`docs/key-position-table.md`](docs/key-position-table.md)
+  和 [`docs/keymap-scan-result.md`](docs/keymap-scan-result.md)。
+- ~~沒有對 Z12 送過任何設定封包。~~ → GET_FEATURE（report 4/7/9/10）
+  和 SET_FEATURE（report 4 keymap Write）都已驗證。report 6/8 在
+  macOS hidapi 上讀不到。CLI 目前只有讀取子命令。

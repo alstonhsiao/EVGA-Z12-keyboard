@@ -55,16 +55,28 @@ USB         2.0 Full Speed (12 Mb/s), 500 mA
 
 ## 現況
 
-這個目錄現在只有文件。還沒有 CLI、還沒送過任何設定封包。
+協定已還原並實機驗證。唯讀 CLI 可用：
 
-下一步（需你同意後才做）：
+```
+.venv/bin/python src/z12ctl.py info
+.venv/bin/python src/z12ctl.py keymap dump
+.venv/bin/python src/z12ctl.py keymap get E1
+.venv/bin/python src/z12ctl.py macro list
+.venv/bin/python src/z12ctl.py macro get 6
+.venv/bin/python src/z12ctl.py profile get
+.venv/bin/python src/z12ctl.py led get
+```
 
-1. **只讀探測** — 對介面 1 的 feature report 4/6/7 做 GET，確認是不是 `EA 02` 家族，不寫入。
-2. **Windows USB sniff** — 在有 Unleash 的 Windows（實體機或 USB 直通的 VM）上，用 USBPcap + Wireshark 各改一次：一顆鍵、一個 RGB 區、一個 profile。這是還原映射協定最快的路。
-3. **先做 RGB CLI** — 風險最低、可對照 OpenRGB 原始碼。
-4. **再做映射 / 巨集 / profile**。
+需要 `.venv/`（`hid` 套件）以及 macOS「系統設定 → 隱私權與安全性 → 輸入監控」授權。只開介面 1（vendor collection），不碰 boot keyboard。
 
-macOS 開 HID 裝置需要「系統設定 → 隱私權與安全性 → 輸入監控」授權。探測時只開 vendor 介面，避免鍵盤暫時沒反應。
+| 已完成 | 尚未做成 CLI |
+|--------|----------------|
+| keymap 讀取（121 鍵，含 Shift 層參數） | keymap 寫入（`test_write.py` 已驗證 SET_FEATURE） |
+| 巨集讀取（report 9/10，HID usage 編碼） | 巨集寫入 |
+| profile 編號讀取（1–9） | 存檔：`profile=0` 回 0xC0；帶編號回 0xC1。尚未拔插驗證 flash |
+| report 7 LED 模式參數讀取 | report 6/8（macOS hidapi 讀不到） |
+
+詳細擷取與封包見 [`docs/research.md`](docs/research.md)。開發約束見 [`AGENTS.md`](AGENTS.md)。
 
 ## 為什麼不直接用 OpenRGB
 

@@ -6,6 +6,14 @@
 .idea/
 *.swp
 
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.ruff_cache/
+*.egg-info/
+.pytest_cache/
+
 # HID 擷取原始檔（可能很大，另外保存）
 captures/
 *.pcapng

@@ -1,0 +1,29 @@
+[project]
+name = "evga-z12"
+version = "0.1.0"
+description = "EVGA Z12 keyboard configuration tool (macOS/Linux)"
+requires-python = ">=3.10"
+dependencies = ["hidapi>=0.14.0"]
+
+[project.scripts]
+z12ctl = "z12ctl:main"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["src"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "UP",   # pyupgrade
+]
+ignore = [
+    "E402", # module-level import not at top (used in keymap.py for circular import workaround)
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["evga_z12"]
