@@ -68,6 +68,8 @@ USB         2.0 Full Speed (12 Mb/s), 500 mA
 .venv/bin/python src/z12ctl.py macro get 6
 .venv/bin/python src/z12ctl.py profile get
 .venv/bin/python src/z12ctl.py led get
+.venv/bin/python src/z12ctl.py led set StaticOn --sub 2
+.venv/bin/python src/z12ctl.py led set RainbowWave --sub 2 --save
 ```
 
 需要 `.venv/`（`hid` 套件）以及 macOS「系統設定 → 隱私權與安全性 → 輸入監控」授權。只開介面 1（vendor collection），不碰 boot keyboard。
@@ -76,7 +78,8 @@ USB         2.0 Full Speed (12 Mb/s), 500 mA
 |--------|----------------|
 | keymap 讀取（121 鍵，含 Shift 層參數） | 巨集寫入 |
 | keymap 寫入（`keymap set`，已實機驗證） | 切換 / 重置 profile |
-| 存檔（`profile save`，profile=0，拔插後仍在） | LED 寫入 |
+| 存檔（`profile save`，profile=0，拔插後仍在） | LED 各模式參數（顏色/速度） |
+| LED 模式切換（`led set StaticOn` 等） | |
 | 巨集讀取（report 9/10，HID usage 編碼） | report 6/8（macOS hidapi 讀不到） |
 | profile 編號讀取（1–9） | GameMode / FN 角色鍵（刻意拒絕改寫） |
 | report 7 LED 模式參數讀取 | |

@@ -107,6 +107,51 @@ def read_all_led_modes(dev: Z12Device) -> list[LEDModeData]:
     return results
 
 
+def _checksum(data: bytes) -> int:
+    """Report 7 checksum: -(sum of Data[128]) & 0xFF. Verified on-device."""
+    return (-sum(data)) & 0xFF
+
+
+def write_lighting_effect_mode(dev: Z12Device, main_mode: int, sub_mode: int = 0) -> LEDModeData:
+    """Set the active LED mode (report 7, MainCommand 0x0C, Write).
+
+    On-device 2026-08-16: RainbowWave 05 02 -> StaticOn 01 02 returned
+    0xC0 and read back; restore 05 02 succeeded. One SET_FEATURE only.
+
+    Raises:
+        ValueError: unsupported mode (StarShining on Z12).
+        HIDError: device returned non-success.
+    """
+    # LedMainLightingEffectMode.StarShining = 0x06; Z12 read of 0x13 returns C1.
+    if main_mode == 0x06:
+        raise ValueError("StarShining is not supported on Z12")
+
+    data = bytearray(128)
+    data[0] = main_mode & 0xFF
+    data[1] = sub_mode & 0xFF
+    payload = bytearray(protocol.REPORT_PROFILE_IN_RAM_SIZE - 1)
+    payload[0] = protocol.HEADER1
+    payload[1] = protocol.HEADER2
+    payload[2] = protocol.RAM_CMD_LED_LIGHTING_EFFECT_MODE
+    payload[3] = protocol.SUB_WRITE & 0xFF
+    payload[4] = 0x00
+    payload[5] = 0x00
+    payload[6] = _checksum(data)
+    payload[7 : 7 + 128] = data
+
+    resp = dev.send_once(
+        protocol.REPORT_PROFILE_IN_RAM,
+        protocol.REPORT_PROFILE_IN_RAM_SIZE,
+        bytes(payload),
+        get_count=4,
+        first_wait=0.10,
+    )
+    status = resp[6]
+    if status != protocol.RESPONSE_SUCCESS:
+        raise HIDError(f"write_lighting_effect_mode: status 0x{status:02x}")
+    return read_led_mode(dev, protocol.RAM_CMD_LED_LIGHTING_EFFECT_MODE)
+
+
 def decode_lighting_effect_mode(data: bytes) -> dict[str, int]:
     """Decode the LightingEffectMode data (MainCommand 0x0C).
 

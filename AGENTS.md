@@ -83,8 +83,8 @@ Windows；macOS 上鍵盤當一般 USB HID 鍵盤可用，改映射 / 巨集 / �
    `keymap get/dump/set`（2026-08-16 實機：E5→F13→還原 macro#3）。
 4. ~~CLI 唯讀整合。~~ → **2026-08-16 完成**（`src/z12ctl.py`）。
 5. ~~存檔命令格式（profile=0）。~~ → CLI `profile save`；拔插後仍在。
-6. CLI 寫入子命令：~~keymap set / profile save~~ 完成。巨集 / LED /
-   SetProfile 尚未做。
+6. CLI 寫入子命令：~~keymap set / profile save / profile set /
+   led set（模式）~~ 完成。巨集寫入、LED 各模式參數（顏色/速度）尚未做。
 7. 五區 RGB 寫入（report 6 在 macOS 讀不到，改走 report 7）。
 
 ---

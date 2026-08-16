@@ -641,7 +641,7 @@ IOHIDDevice 不認。需改用 report 7（136B）分段讀取或分包版
 | 命令 | Report | MainCommand | 封包 | 實機驗證 |
 |------|--------|-------------|------|---------|
 | GetProfile | 4 (17B) | 0x06 | `04 EA 02 06 01 00 00 00` | ✅ 回 profile 編號 |
-| SetProfile | 4 (17B) | 0x06 | `04 EA 02 06 00 00 00 <num>` | 未測（會切換 profile） |
+| SetProfile | 4 (17B) | 0x06 | `04 EA 02 06 00 00 00 <num>` | ✅ 1→2→1；profile 2 的 E5=disable |
 | SaveProfile | 4 (17B) | 0x12 | `04 EA 02 12 00 00 00 00`（profile=0=當前） | ✅ 0xC0；`<num>=1` 回 0xC1 |
 | ResetProfile | 4 (17B) | 0x09 | `04 EA 02 09 00 00 00 <num>` | 未測（會重置） |
 | ReadProfile | 8 (265B) | — | `07 EA 02 01 <num> 00 00` | ❌ macOS 讀不到 |
@@ -673,6 +673,16 @@ report 8 不同，report 8 讀不到）。9 個 MainCommand 裡 8 個回 0xC0。
 report 7 = 「當前 RAM 中」的 LED/keymap 參數即時讀寫，128B data 段。
 跟 report 8（整組 onboard profile, 265B）不同層次。report 7 改的是
 「現在正在顯示的」，report 8 改的是「存在 flash 裡的某號 profile」。
+
+### LED 模式寫入（2026-08-16）— 已驗證 ✅
+
+Checksum：`CheckSum = -(sum of Data[128]) & 0xFF`（讀回 Rainbow `05 02`
+時 byte[7]=0xF9，驗算通過）。
+
+Write LightingEffectMode（MainCommand 0x0C, Sub=0x0000），只改 data[0:2]：
+`07 EA 02 0C 00 00 00 <chk> 01 02 ...` → **0xC0**，讀回 StaticOn。
+還原 `05 02` → **0xC0**，讀回 RainbowWave。未存檔、未碰 report 6。
+CLI：`z12ctl led set StaticOn --sub 2` / `led set RainbowWave --sub 2`。
 
 ## SET_FEATURE 寫入測試（2026-08-16）
 

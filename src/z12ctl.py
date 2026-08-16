@@ -14,7 +14,9 @@ Usage:
     z12ctl profile get                    # current profile number
     z12ctl profile list                   # profiles 1-9
     z12ctl profile save                   # write RAM to flash (profile=0)
+    z12ctl profile set <1-9>              # switch onboard profile
     z12ctl led get                        # report 7 LED mode parameters
+    z12ctl led set <mode> [--sub N] [--save]
 
 All protocol constants are verified against on-device captures
 (docs/research.md). Only opens interface 1 (vendor collection 0x08/0x4B),
@@ -33,9 +35,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from evga_z12 import protocol
 from evga_z12.hid_io import DeviceNotFoundError, HIDError, Z12Device
 from evga_z12.keymap import KeyEntry, dump_keymap, parse_binding, read_key, write_key
-from evga_z12.led import decode_lighting_effect_mode, read_all_led_modes, read_led_mode
+from evga_z12.led import (
+    decode_lighting_effect_mode,
+    read_all_led_modes,
+    read_led_mode,
+    write_lighting_effect_mode,
+)
 from evga_z12.macro import MacroInfo, read_macro, read_macro_name, read_macro_status
-from evga_z12.profile import get_profile_number, save_profile, scan_profiles
+from evga_z12.profile import get_profile_number, save_profile, scan_profiles, set_profile
 
 # --- Output helpers ---
 
@@ -242,6 +249,42 @@ def cmd_profile_get(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_profile_set(args: argparse.Namespace) -> int:
+    """Switch the active onboard profile (1-9)."""
+    target = int(args.number)
+    if not (protocol.PROFILE_MIN <= target <= protocol.PROFILE_MAX):
+        print(
+            f"Error: profile must be {protocol.PROFILE_MIN}-{protocol.PROFILE_MAX}",
+            file=sys.stderr,
+        )
+        return 2
+    print("=== Profile Set ===")
+    print(f"  Target: {target}")
+    print("  Please stop typing.")
+    with Z12Device() as dev:
+        try:
+            before = get_profile_number(dev)
+        except HIDError as exc:
+            print(f"Error reading profile: {exc}", file=sys.stderr)
+            return 1
+        print(f"  Before: {before}")
+        try:
+            set_profile(dev, target)
+        except HIDError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 1
+        try:
+            after = get_profile_number(dev)
+        except HIDError as exc:
+            print(f"Error reading profile after set: {exc}", file=sys.stderr)
+            return 1
+        print(f"  After:  {after}")
+        if after != target:
+            print("  GetProfile did not match the requested number.", file=sys.stderr)
+            return 1
+    return 0
+
+
 def cmd_profile_save(args: argparse.Namespace) -> int:
     """Write current RAM profile to onboard flash (profile=0)."""
     print("=== Profile Save ===")
@@ -330,6 +373,55 @@ def cmd_led_get(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_led_set(args: argparse.Namespace) -> int:
+    """Set the active LED mode (report 7 Write). RAM only unless --save."""
+    try:
+        main_mode = _parse_led_main_mode(args.mode)
+    except argparse.ArgumentTypeError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 2
+    sub_mode = int(args.sub)
+    print("=== LED Set ===")
+    print(
+        f"  Mode: {protocol.LED_MAIN_MODE_NAMES.get(main_mode, '?')} "
+        f"(0x{main_mode:02x}) sub=0x{sub_mode:02x}"
+    )
+    print(f"  Save: {'yes' if args.save else 'no (RAM only)'}")
+    print("  Please stop typing.")
+    with Z12Device() as dev:
+        try:
+            before = read_led_mode(dev, protocol.RAM_CMD_LED_LIGHTING_EFFECT_MODE)
+        except HIDError as exc:
+            print(f"Error reading: {exc}", file=sys.stderr)
+            return 1
+        dec = decode_lighting_effect_mode(before.data)
+        print(
+            f"  Before: {dec.get('main_mode_name')} "
+            f"(0x{dec.get('main_mode', 0):02x}) sub=0x{dec.get('sub_mode', 0):02x}"
+        )
+        try:
+            after = write_lighting_effect_mode(dev, main_mode, sub_mode)
+        except (HIDError, ValueError) as exc:
+            print(f"Error writing: {exc}", file=sys.stderr)
+            return 1
+        dec2 = decode_lighting_effect_mode(after.data)
+        print(
+            f"  After:  {dec2.get('main_mode_name')} "
+            f"(0x{dec2.get('main_mode', 0):02x}) sub=0x{dec2.get('sub_mode', 0):02x}"
+        )
+        if not after.success or after.data[0] != main_mode:
+            print("  Read-back did not match the requested mode.", file=sys.stderr)
+            return 1
+        if args.save:
+            try:
+                save_profile(dev)
+            except HIDError as exc:
+                print(f"Error saving profile: {exc}", file=sys.stderr)
+                return 1
+            print("  Saved to flash (profile=0).")
+    return 0
+
+
 # --- Argument parsing helpers ---
 
 
@@ -353,6 +445,22 @@ def _parse_position(s: str) -> int:
     raise argparse.ArgumentTypeError(
         f"unknown position: {s!r} (use hex 0xNN, decimal, or key name)"
     )
+
+
+def _parse_led_main_mode(s: str) -> int:
+    """Parse LedMainLightingEffectMode: name or hex/decimal value."""
+    s = s.strip()
+    if s.lower().startswith("0x"):
+        return int(s, 16)
+    try:
+        return int(s)
+    except ValueError:
+        pass
+    for value, name in protocol.LED_MAIN_MODE_NAMES.items():
+        if name.lower() == s.lower():
+            return value
+    names = ", ".join(protocol.LED_MAIN_MODE_NAMES.values())
+    raise argparse.ArgumentTypeError(f"unknown LED mode: {s!r} (use {names})")
 
 
 def _parse_ram_cmd(s: str) -> int:
@@ -444,6 +552,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     profile_save.set_defaults(func=cmd_profile_save)
 
+    profile_set = profile_sub.add_parser("set", help="switch onboard profile (1-9)")
+    profile_set.add_argument("number", type=int, help="profile number 1-9")
+    profile_set.set_defaults(func=cmd_profile_set)
+
     # led
     led_parser = sub.add_parser("led", help="LED mode operations")
     led_sub = led_parser.add_subparsers(dest="led_command", required=True)
@@ -451,6 +563,24 @@ def build_parser() -> argparse.ArgumentParser:
     led_get = led_sub.add_parser("get", help="read LED mode parameters (report 7)")
     led_get.add_argument("--mode", help="specific mode only (hex 0x0C or name LED_StaticOn)")
     led_get.set_defaults(func=cmd_led_get)
+
+    led_set = led_sub.add_parser("set", help="set active LED mode (report 7)")
+    led_set.add_argument(
+        "mode",
+        help="Off, StaticOn, Breathing, Pulse, RainbowWave, Trigger (not StarShining)",
+    )
+    led_set.add_argument(
+        "--sub",
+        type=lambda x: int(x, 0),
+        default=0,
+        help="sub mode byte (default 0; current Rainbow uses 2)",
+    )
+    led_set.add_argument(
+        "--save",
+        action="store_true",
+        help="also SaveProfile (profile=0) after a successful write",
+    )
+    led_set.set_defaults(func=cmd_led_set)
 
     return parser
 

@@ -90,10 +90,12 @@ def set_profile(dev: Z12Device, profile_num: int) -> None:
         profile_num,
     ]) + bytes(9)
 
-    resp = dev.send_once_report4(payload)
+    # Software uses 100 ms for SetProfile (profile-protocol.md).
+    resp = dev.send_once_report4(payload, get_count=4, first_wait=0.10)
     status = resp[6]
     if status != protocol.RESPONSE_SUCCESS:
         raise HIDError(f"set_profile({profile_num}): status 0x{status:02x}")
+    return resp
 
 
 def save_profile(dev: Z12Device) -> bytes:
